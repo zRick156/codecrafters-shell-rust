@@ -3,15 +3,15 @@ use std::io::{self, Write};
 
 fn main() {
     // TODO: Uncomment the code below to pass the first stage
-    let mut command: String = String::new();
     loop {
        print!("$ ");
        io::stdout().flush().unwrap();
 
+        let mut command: String = String::new();
         io::stdin().read_line(&mut command).unwrap();
-        if command.contains("exit") {
-            std::process::exit(0);
+        match command.trim() {
+            "exit" => std::process::exit(0),
+            _ => println!("{}: command not found", command.trim()),
         }
-        println!("{}: command not found", command.trim());
     }
 }
