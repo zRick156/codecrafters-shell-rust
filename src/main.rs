@@ -3,12 +3,13 @@ use shell_words::split;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
-const BUILT_IN_COMMANDS: [&str; 3] = ["type", "exit", "echo"];
+const BUILT_IN_COMMANDS: [&str; 4] = ["type", "exit", "echo", "pwd"];
 enum Command {
     ExitCommand,
     EchoCommand { display_string: String },
     TypeCommand { command_name: String },
     TypeExternalProgram { command_name: String, args: Vec<String> },
+    PwdCommand {path_name: String},
     CommandNotFound,
 }
 
@@ -42,6 +43,13 @@ impl Command {
                 } else {
                     return Self::CommandNotFound;
                 }
+            }
+            "pwd" => {
+                let path = match std::env::current_dir() {
+                    Ok(p) => p.display().to_string(),
+                    Err(_) => String::from("unknown"),
+                };
+                return Self::PwdCommand { path_name: path };
             }
             _ => {}
         }
@@ -103,6 +111,9 @@ fn command_handler(input: &str) {
                 }
                 Err(e) => eprintln!("failed to execute process: {}", e),
             }
+        }
+        Command::PwdCommand { path_name } => {
+            println!("{}", path_name);
         }
         _ => println!("{}: command not found", input.trim()),
     }
