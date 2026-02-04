@@ -1,3 +1,4 @@
+use pathsearch::find_executable_in_path;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
@@ -11,21 +12,26 @@ enum Command {
 
 impl Command {
     fn from_input(input: &str) -> Self {
-       let input = input.trim();
-        if input == "exit"{
+        let cmd: Vec<&str> = input.split_whitespace().collect();
+        if cmd.is_empty() {
+            return Self::CommandNotFound;
+        }
+        let args = &cmd[1..];
+        let input = input.trim();
+        if input == "exit" {
             return Self::ExitCommand;
         };
-        if let Some(pos) =  input.find("echo "){
-            if pos == 0{
+        if let Some(pos) = input.find("echo ") {
+            if pos == 0 {
                 return Self::EchoCommand {
-                    display_string: input["echo ".len()..].to_string(),
+                    display_string: args.join(" "),
                 };
             }
         }
-        if let Some(pos) = input.find("type "){
-            if pos == 0{
+        if let Some(pos) = input.find("type ") {
+            if pos == 0 {
                 return Self::TypeCommand {
-                    command_name: input["type ".len()..].to_string(),
+                    command_name: args[0].to_string(),
                 };
             }
         }
@@ -36,26 +42,31 @@ impl Command {
 fn main() {
     // TODO: Uncomment the code below to pass the first stage
     loop {
-       print!("$ ");
-       io::stdout().flush().unwrap();
+        print!("$ ");
+        io::stdout().flush().unwrap();
 
         let stdin = io::stdin();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let command = Command::from_input(&input);
-
-        match command {
-            Command::ExitCommand => std::process::exit(0),
-            Command::EchoCommand { display_string } => println!("{}", display_string),
-            Command::TypeCommand { command_name } => {
-                if BUILT_IN_COMMANDS.contains(&command_name.as_str()){
-                    println!("{} is a shell builtin", command_name);
-                }else {
-                    println!("{}: not found", command_name);
-                }
-            }
-            _ => println!("{}: command not found", input.trim()),
-        }
+        let trimmed_input = input.trim();
+        command_handler(trimmed_input);
     }
 }
 
+fn command_handler(input: &str) {
+    let command = Command::from_input(input);
+    match command {
+        Command::ExitCommand => std::process::exit(0),
+        Command::EchoCommand { display_string } => println!("{}", display_string),
+        Command::TypeCommand { command_name } => {
+            if BUILT_IN_COMMANDS.contains(&command_name.as_str()) {
+                println!("{} is a shell builtin", command_name);
+            } else if let Some(path) = find_executable_in_path(&command_name) {
+                println!("{} is {}", command_name, path.display());
+            } else {
+                println!("{}: not found", command_name);
+            }
+        }
+        _ => println!("{}: command not found", input.trim()),
+    }
+}
