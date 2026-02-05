@@ -2,15 +2,28 @@ use pathsearch::find_executable_in_path;
 use shell_words::split;
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
-const BUILT_IN_COMMANDS: [&str; 4] = ["type", "exit", "echo", "pwd"];
+const BUILT_IN_COMMANDS: [&str; 5] = ["type", "exit", "echo", "pwd", "cd"];
+
+static CURRENT_PATH: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(initial_current_dir()));
+
+fn initial_current_dir() -> String {
+    match std::env::current_dir() {
+        Ok(p) => p.display().to_string(),
+        Err(_) => String::from("unknown"),
+    }
+}
+
 enum Command {
     ExitCommand,
     EchoCommand { display_string: String },
     TypeCommand { command_name: String },
-    TypeExternalProgram { command_name: String, args: Vec<String> },
-    PwdCommand {path_name: String},
+    ExecCommand { command_name: String, args: Vec<String> },
+    PwdCommand { path_name: String },
     CommandNotFound,
+    CdCommand { path_name: String },
 }
 
 impl Command {
@@ -34,7 +47,7 @@ impl Command {
                     String::new()
                 };
                 return Self::EchoCommand { display_string: display };
-            }
+            },
             "type" => {
                 if parts.len() > 1 {
                     return Self::TypeCommand {
@@ -43,20 +56,23 @@ impl Command {
                 } else {
                     return Self::CommandNotFound;
                 }
-            }
+            },
             "pwd" => {
-                let path = match std::env::current_dir() {
-                    Ok(p) => p.display().to_string(),
-                    Err(_) => String::from("unknown"),
+                return Self::PwdCommand { path_name: CURRENT_PATH.lock().unwrap().clone() };
+            },
+            "cd" => {
+                let path = if parts.len() > 1 {
+                    parts[1].clone()
+                } else {
+                    CURRENT_PATH.lock().unwrap().clone()
                 };
-                return Self::PwdCommand { path_name: path };
+                return Self::CdCommand { path_name: path };
             }
             _ => {}
         }
 
-        // Cerca l'eseguibile usando il primo token (gestisce anche percorsi quotati)
-        if let Some(path) = find_executable_in_path(&parts[0]) {
-            return Self::TypeExternalProgram {
+        if find_executable_in_path(&parts[0]).is_some() {
+            return Self::ExecCommand {
                 command_name: parts[0].clone(),
                 args: if parts.len() > 1 {
                     parts[1..].to_vec()
@@ -77,7 +93,10 @@ fn main() {
 
         let stdin = io::stdin();
         let mut input = String::new();
-        stdin.read_line(&mut input).unwrap();
+        let bytes_read = stdin.read_line(&mut input).unwrap();
+        if bytes_read == 0 {
+            break;
+        }
         let trimmed_input = input.trim();
         command_handler(trimmed_input);
     }
@@ -101,8 +120,8 @@ fn command_handler(input: &str) {
             } else {
                 println!("{}: not found", command_name);
             }
-        }
-        Command::TypeExternalProgram { command_name, args } => {
+        },
+        Command::ExecCommand { command_name, args } => {
             match std::process::Command::new(&command_name).args(&args).status() {
                 Ok(status) => {
                     if !status.success() {
@@ -111,10 +130,22 @@ fn command_handler(input: &str) {
                 }
                 Err(e) => eprintln!("failed to execute process: {}", e),
             }
-        }
+        },
         Command::PwdCommand { path_name } => {
             println!("{}", path_name);
-        }
+        },
+        Command::CdCommand { path_name } => {
+            if let Err(_e) = std::env::set_current_dir(&path_name) {
+                eprintln!("cd: {}: {}", path_name, "No such file or directory");
+            } else {
+                // aggiorna la variabile globale con il nuovo path effettivo
+                let new_path = match std::env::current_dir() {
+                    Ok(p) => p.display().to_string(),
+                    Err(_) => path_name.clone(),
+                };
+                *CURRENT_PATH.lock().unwrap() = new_path;
+            }
+        },
         _ => println!("{}: command not found", input.trim()),
     }
 }
