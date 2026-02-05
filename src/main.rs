@@ -1,9 +1,9 @@
+use once_cell::sync::Lazy;
 use pathsearch::find_executable_in_path;
 use shell_words::split;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
 
 const BUILT_IN_COMMANDS: [&str; 5] = ["type", "exit", "echo", "pwd", "cd"];
 
@@ -18,12 +18,23 @@ fn initial_current_dir() -> String {
 
 enum Command {
     ExitCommand,
-    EchoCommand { display_string: String },
-    TypeCommand { command_name: String },
-    ExecCommand { command_name: String, args: Vec<String> },
-    PwdCommand { path_name: String },
+    EchoCommand {
+        display_string: String,
+    },
+    TypeCommand {
+        command_name: String,
+    },
+    ExecCommand {
+        command_name: String,
+        args: Vec<String>,
+    },
+    PwdCommand {
+        path_name: String,
+    },
     CommandNotFound,
-    CdCommand { path_name: String },
+    CdCommand {
+        path_name: String,
+    },
 }
 
 impl Command {
@@ -46,8 +57,10 @@ impl Command {
                 } else {
                     String::new()
                 };
-                return Self::EchoCommand { display_string: display };
-            },
+                return Self::EchoCommand {
+                    display_string: display,
+                };
+            }
             "type" => {
                 if parts.len() > 1 {
                     return Self::TypeCommand {
@@ -56,10 +69,12 @@ impl Command {
                 } else {
                     return Self::CommandNotFound;
                 }
-            },
+            }
             "pwd" => {
-                return Self::PwdCommand { path_name: CURRENT_PATH.lock().unwrap().clone() };
-            },
+                return Self::PwdCommand {
+                    path_name: CURRENT_PATH.lock().unwrap().clone(),
+                };
+            }
             "cd" => {
                 let path = if parts.len() > 1 {
                     parts[1].clone()
@@ -120,9 +135,12 @@ fn command_handler(input: &str) {
             } else {
                 println!("{}: not found", command_name);
             }
-        },
+        }
         Command::ExecCommand { command_name, args } => {
-            match std::process::Command::new(&command_name).args(&args).status() {
+            match std::process::Command::new(&command_name)
+                .args(&args)
+                .status()
+            {
                 Ok(status) => {
                     if !status.success() {
                         eprintln!("process exited with code {:?}", status.code());
@@ -130,22 +148,35 @@ fn command_handler(input: &str) {
                 }
                 Err(e) => eprintln!("failed to execute process: {}", e),
             }
-        },
+        }
         Command::PwdCommand { path_name } => {
             println!("{}", path_name);
-        },
+        }
         Command::CdCommand { path_name } => {
-            if let Err(_e) = std::env::set_current_dir(&path_name) {
+            let expanded = if path_name.starts_with("~") {
+                let home = std::env::var("HOME")
+                    .or_else(|_| std::env::var("USERPROFILE"))
+                    .unwrap_or_default();
+                if path_name == "~" {
+                    home
+                } else {
+                    format!("{}{}", home, &path_name[1..])
+                }
+            } else {
+                path_name.clone()
+            };
+
+            if let Err(_e) = std::env::set_current_dir(&expanded) {
                 eprintln!("cd: {}: {}", path_name, "No such file or directory");
             } else {
                 // aggiorna la variabile globale con il nuovo path effettivo
                 let new_path = match std::env::current_dir() {
                     Ok(p) => p.display().to_string(),
-                    Err(_) => path_name.clone(),
+                    Err(_) => expanded,
                 };
                 *CURRENT_PATH.lock().unwrap() = new_path;
             }
-        },
+        }
         _ => println!("{}: command not found", input.trim()),
     }
 }
